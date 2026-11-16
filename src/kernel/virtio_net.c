@@ -184,6 +184,7 @@ net_transmit(struct netdev *dev, uchar *pkt, uint len)
       return 0;
     }
   }
+  printf("net: tx timeout used=%d last=%d\n", txq.used->idx, txq.last_used);
   release(&netlock);
   return -1;
 }
@@ -191,6 +192,8 @@ net_transmit(struct netdev *dev, uchar *pkt, uint len)
 static void
 net_rx_scan(void)
 {
+  int reposted = 0;
+
   while (rxq.used->idx != rxq.last_used) {
     struct virtq_used_elem e = rxq.used->ring[rxq.last_used % NUM];
     uint16 id = e.id;
@@ -206,8 +209,10 @@ net_rx_scan(void)
       netdev_input(rxbuf[id] + HDR_LEN, len - HDR_LEN);
     }
     rx_post(id);
+    reposted = 1;
   }
-  vn_notify(0);
+  if (reposted)
+    vn_notify(0);
 }
 
 void
@@ -242,10 +247,11 @@ virtio_net_init(void)
   int i;
 
 #ifdef ARCH_LOONGARCH
-  // TODO(proj6): virtio-net-pci 能识别设备并读出 MAC，但随后在 notify/收包路径
-  // 触发 kerneltrap（badv=0），正在定位。先关掉，保证 LoongArch 正常启动。
-  printf("net: virtio-net-pci 驱动调试中，暂未启用\n");
-  return;
+  if (virtio_net_pci_init() < 0) {
+    printf("net: no virtio-net-pci\n");
+    return;
+  }
+  printf("net: virtio-net-pci found\n");
 #else
   if (*R(VIRTIO_MMIO_MAGIC_VALUE) != 0x74726976 ||
       *R(VIRTIO_MMIO_VERSION) != 2 || *R(VIRTIO_MMIO_DEVICE_ID) != 1 ||
@@ -333,10 +339,10 @@ virtio_net_init(void)
   }
 
   net_ready = 1;
-  vn_notify(0);
 
   status |= VIRTIO_CONFIG_S_DRIVER_OK;
   vn_set_status(status);
+  vn_notify(0);
 
   if (netdev_register(&netdev) != 0) {
     printf("net: register failed\n");

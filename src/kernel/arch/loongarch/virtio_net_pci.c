@@ -53,7 +53,7 @@ static uint32 notify_off_multiplier;
 
 static uint busno, devno, funcno;
 static uint64 bar_addr[6];
-static uint64 next_mmio = PCI_MMIO_BASE & ~DMWIN_MASK;
+static uint64 next_mmio = (PCI_MMIO_BASE & ~DMWIN_MASK) + 0x100000;
 
 static uint64
 pci_conf_addr(uint bus, uint dev, uint func, uint off)
@@ -281,14 +281,18 @@ virtio_net_pci_set_queue_addr(uint64 desc, uint64 avail, uint64 used)
 void
 virtio_net_pci_set_ready(uint16 r)
 {
+  common_cfg->queue_msix_vector = 0xffff;
   common_cfg->queue_enable = r;
 }
 
 void
 virtio_net_pci_notify(uint16 q)
 {
+  uint16 off;
+
   common_cfg->queue_select = q;
-  notify_cfg[common_cfg->queue_notify_off * notify_off_multiplier / 2] = q;
+  off = common_cfg->queue_notify_off;
+  *(volatile uint16 *)((uint64)notify_cfg + (uint64)off * notify_off_multiplier) = q;
 }
 
 uint8
