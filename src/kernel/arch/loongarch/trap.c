@@ -175,6 +175,7 @@ clockintr()
   ticks++;
   wakeup(&ticks);
   release(&tickslock);
+  virtio_net_poll();
 }
 
 int

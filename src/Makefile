@@ -69,6 +69,7 @@ ARCH_OBJS = \
   $K/arch/loongarch/apic.o \
   $K/arch/loongarch/extioi.o \
   $K/arch/loongarch/virtio_pci.o \
+  $K/arch/loongarch/virtio_net_pci.o \
   $K/virtio_disk.o
 KERNEL_LD = $K/arch/loongarch/kernel.ld
 USER_LD = $K/arch/loongarch/user.ld

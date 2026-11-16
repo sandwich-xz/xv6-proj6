@@ -231,6 +231,7 @@ void            virtio_disk_watchdog(void);
 // virtio_net.c
 void            virtio_net_init(void);
 void            virtio_net_intr(void);
+void            virtio_net_poll(void);
 
 // tcp.c
 void            tcp_timer(void);

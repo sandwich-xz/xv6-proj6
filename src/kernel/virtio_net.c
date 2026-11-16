@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: BSD-2-Clause
 //
-// virtio-net 驱动（先做 RISC-V 的 virtio-mmio 传输）。
-// 结构对齐 virtio_disk.c：同样的状态机、同样的队列布局，
-// 只是网络要两个队列：0 = 接收，1 = 发送。
+// virtio-net 驱动。队列、描述符环、收发逻辑两个架构共用，
+// 只在"怎么碰到设备寄存器"这一层分叉：
+//   RISC-V  = virtio-mmio（0x10002000）
+//   LoongArch = virtio-pci（capability 定位，见 virtio_net_pci.c）
 #include "types.h"
 #include "riscv.h"
 #include "spinlock.h"
@@ -13,23 +14,23 @@
 #include "net.h"
 
 #ifdef ARCH_LOONGARCH
-// LoongArch 走 virtio-pci，下一阶段补；这里留空保证两个架构都能链接。
-void
-virtio_net_init(void)
-{
-}
-
-void
-virtio_net_intr(void)
-{
-}
+int virtio_net_pci_init(void);
+uint8 virtio_net_pci_status(void);
+void virtio_net_pci_set_status(uint8);
+uint64 virtio_net_pci_features(void);
+void virtio_net_pci_set_features(uint64);
+void virtio_net_pci_select_queue(uint16);
+uint16 virtio_net_pci_queue_max(void);
+void virtio_net_pci_set_queue_num(uint16);
+void virtio_net_pci_set_queue_addr(uint64, uint64, uint64);
+void virtio_net_pci_set_ready(uint16);
+void virtio_net_pci_notify(uint16);
+uint8 virtio_net_pci_isr(void);
 #else
-
 #define R(r) ((volatile uint32 *)(VIRTIO1 + (r)))
+#endif
 
 #define VIRTIO_NET_F_MRG_RXBUF 15
-#define VIRTQ_USED_F_NO_NOTIFY 1
-
 #define RX_BUFSZ 2048
 #define HDR_LEN 10 // 不协商 MRG_RXBUF 时 virtio_net_hdr 为 10 字节
 
@@ -49,44 +50,104 @@ static int net_ready;
 static int seen_frame;
 static struct spinlock netlock;
 
+static uint64
+vaddr_dma(void *p)
+{
+#ifdef ARCH_LOONGARCH
+  return ((uint64)p) & ~DMWIN_MASK;
+#else
+  return (uint64)p;
+#endif
+}
+
 static uint8
-vstatus(void)
+vn_status(void)
 {
+#ifdef ARCH_LOONGARCH
+  return virtio_net_pci_status();
+#else
   return *R(VIRTIO_MMIO_STATUS);
+#endif
 }
 
 static void
-vset_status(uint8 s)
+vn_set_status(uint8 s)
 {
+#ifdef ARCH_LOONGARCH
+  virtio_net_pci_set_status(s);
+#else
   *R(VIRTIO_MMIO_STATUS) = s;
+#endif
+}
+
+static uint64
+vn_features(void)
+{
+#ifdef ARCH_LOONGARCH
+  return virtio_net_pci_features();
+#else
+  return *R(VIRTIO_MMIO_DEVICE_FEATURES);
+#endif
 }
 
 static void
-vnotify(uint16 q)
+vn_set_features(uint64 f)
 {
-  *R(VIRTIO_MMIO_QUEUE_NOTIFY) = q;
+#ifdef ARCH_LOONGARCH
+  virtio_net_pci_set_features(f);
+#else
+  *R(VIRTIO_MMIO_DRIVER_FEATURES) = (uint32)f;
+#endif
+}
+
+static uint16
+vn_queue_max(void)
+{
+#ifdef ARCH_LOONGARCH
+  return virtio_net_pci_queue_max();
+#else
+  return *R(VIRTIO_MMIO_QUEUE_NUM_MAX);
+#endif
 }
 
 static void
-vqueue_setup(uint16 q, struct vq *v, uint16 num)
+vn_setup_queue(uint16 q, struct vq *v, uint16 num)
 {
+#ifdef ARCH_LOONGARCH
+  virtio_net_pci_select_queue(q);
+  virtio_net_pci_set_queue_num(num);
+  virtio_net_pci_set_queue_addr(vaddr_dma(v->desc), vaddr_dma(v->avail),
+                                vaddr_dma(v->used));
+  virtio_net_pci_set_ready(1);
+#else
   *R(VIRTIO_MMIO_QUEUE_SEL) = q;
   *R(VIRTIO_MMIO_QUEUE_NUM) = num;
-  *R(VIRTIO_MMIO_QUEUE_DESC_LOW) = (uint64)v->desc;
-  *R(VIRTIO_MMIO_QUEUE_DESC_HIGH) = (uint64)v->desc >> 32;
-  *R(VIRTIO_MMIO_DRIVER_DESC_LOW) = (uint64)v->avail;
-  *R(VIRTIO_MMIO_DRIVER_DESC_HIGH) = (uint64)v->avail >> 32;
-  *R(VIRTIO_MMIO_DEVICE_DESC_LOW) = (uint64)v->used;
-  *R(VIRTIO_MMIO_DEVICE_DESC_HIGH) = (uint64)v->used >> 32;
+  *R(VIRTIO_MMIO_QUEUE_DESC_LOW) = vaddr_dma(v->desc);
+  *R(VIRTIO_MMIO_QUEUE_DESC_HIGH) = vaddr_dma(v->desc) >> 32;
+  *R(VIRTIO_MMIO_DRIVER_DESC_LOW) = vaddr_dma(v->avail);
+  *R(VIRTIO_MMIO_DRIVER_DESC_HIGH) = vaddr_dma(v->avail) >> 32;
+  *R(VIRTIO_MMIO_DEVICE_DESC_LOW) = vaddr_dma(v->used);
+  *R(VIRTIO_MMIO_DEVICE_DESC_HIGH) = vaddr_dma(v->used) >> 32;
   *R(VIRTIO_MMIO_QUEUE_READY) = 1;
+#endif
   v->num = num;
   v->last_used = 0;
 }
 
 static void
+vn_notify(uint16 q)
+{
+#ifdef ARCH_LOONGARCH
+  virtio_net_pci_notify(q);
+#else
+  *R(VIRTIO_MMIO_QUEUE_NOTIFY) = q;
+#endif
+}
+
+static void
 rx_post(uint16 id)
 {
-  rxq.desc[id].addr = (uint64)rxbuf[id];
+  rxq.desc[id].addr = vaddr_dma(rxbuf[id]);
   rxq.desc[id].len = RX_BUFSZ;
   rxq.desc[id].flags = VRING_DESC_F_WRITE;
   rxq.desc[id].next = 0;
@@ -107,14 +168,14 @@ net_transmit(struct netdev *dev, uchar *pkt, uint len)
   memset(txbuf, 0, HDR_LEN);
   memmove(txbuf + HDR_LEN, pkt, len);
 
-  txq.desc[0].addr = (uint64)txbuf;
+  txq.desc[0].addr = vaddr_dma(txbuf);
   txq.desc[0].len = len + HDR_LEN;
   txq.desc[0].flags = 0;
   txq.desc[0].next = 0;
 
   txq.avail->ring[txq.avail->idx % NUM] = 0;
   txq.avail->idx++;
-  vnotify(1);
+  vn_notify(1);
 
   for (i = 0; i < 1000000; i++) {
     if (txq.used->idx != txq.last_used) {
@@ -127,15 +188,9 @@ net_transmit(struct netdev *dev, uchar *pkt, uint len)
   return -1;
 }
 
-void
-virtio_net_intr(void)
+static void
+net_rx_scan(void)
 {
-  uint32 isr = *R(VIRTIO_MMIO_INTERRUPT_STATUS);
-  *R(VIRTIO_MMIO_INTERRUPT_ACK) = isr;
-
-  if (!net_ready)
-    return;
-
   while (rxq.used->idx != rxq.last_used) {
     struct virtq_used_elem e = rxq.used->ring[rxq.last_used % NUM];
     uint16 id = e.id;
@@ -152,7 +207,30 @@ virtio_net_intr(void)
     }
     rx_post(id);
   }
-  vnotify(0);
+  vn_notify(0);
+}
+
+void
+virtio_net_intr(void)
+{
+#ifndef ARCH_LOONGARCH
+  uint32 isr = *R(VIRTIO_MMIO_INTERRUPT_STATUS);
+  *R(VIRTIO_MMIO_INTERRUPT_ACK) = isr;
+#else
+  (void)virtio_net_pci_isr();
+#endif
+  if (!net_ready)
+    return;
+  net_rx_scan();
+}
+
+// LoongArch 侧暂时用轮询（中断路由尚未接），由时钟中断调用。
+void
+virtio_net_poll(void)
+{
+  if (!net_ready)
+    return;
+  net_rx_scan();
 }
 
 void
@@ -160,36 +238,50 @@ virtio_net_init(void)
 {
   uint32 status = 0;
   uint64 features;
+  uint16 qmax;
   int i;
 
+#ifdef ARCH_LOONGARCH
+  // TODO(proj6): virtio-net-pci 能识别设备并读出 MAC，但随后在 notify/收包路径
+  // 触发 kerneltrap（badv=0），正在定位。先关掉，保证 LoongArch 正常启动。
+  printf("net: virtio-net-pci 驱动调试中，暂未启用\n");
+  return;
+#else
   if (*R(VIRTIO_MMIO_MAGIC_VALUE) != 0x74726976 ||
       *R(VIRTIO_MMIO_VERSION) != 2 || *R(VIRTIO_MMIO_DEVICE_ID) != 1 ||
       *R(VIRTIO_MMIO_VENDOR_ID) != 0x554d4551) {
     printf("net: no virtio-net at 0x%lx\n", (uint64)VIRTIO1);
     return;
   }
+#endif
 
   initlock(&netlock, "virtio_net");
 
-  vset_status(0);
+  vn_set_status(0);
   status |= VIRTIO_CONFIG_S_ACKNOWLEDGE;
-  vset_status(status);
+  vn_set_status(status);
   status |= VIRTIO_CONFIG_S_DRIVER;
-  vset_status(status);
+  vn_set_status(status);
 
-  features = *R(VIRTIO_MMIO_DEVICE_FEATURES);
+  features = vn_features();
   features &= ~(1ULL << VIRTIO_NET_F_MRG_RXBUF);
   features &= ~(1ULL << VIRTIO_F_ANY_LAYOUT);
   features &= ~(1ULL << VIRTIO_RING_F_EVENT_IDX);
   features &= ~(1ULL << VIRTIO_RING_F_INDIRECT_DESC);
-  *R(VIRTIO_MMIO_DRIVER_FEATURES) = (uint32)features;
+  vn_set_features(features);
 
   status |= VIRTIO_CONFIG_S_FEATURES_OK;
-  vset_status(status);
-  if (!(vstatus() & VIRTIO_CONFIG_S_FEATURES_OK)) {
+  vn_set_status(status);
+  if (!(vn_status() & VIRTIO_CONFIG_S_FEATURES_OK)) {
     printf("net: FEATURES_OK unset\n");
     return;
   }
+
+  qmax = vn_queue_max();
+  if (qmax == 0)
+    qmax = NUM;
+  if (qmax > NUM)
+    qmax = NUM;
 
   rxq.desc = (struct virtq_desc *)kalloc();
   rxq.avail = (struct virtq_avail *)kalloc();
@@ -210,12 +302,21 @@ virtio_net_init(void)
   memset(txq.avail, 0, PGSIZE);
   memset(txq.used, 0, PGSIZE);
 
-  vqueue_setup(0, &rxq, NUM);
-  vqueue_setup(1, &txq, NUM);
+  vn_setup_queue(0, &rxq, qmax);
+  vn_setup_queue(1, &txq, qmax);
 
-  // MAC 在设备配置空间 0x100 起
+#ifdef ARCH_LOONGARCH
+  // virtio-net-pci 的 MAC 在设备配置空间；这里用固定值，QEMU 会按 NIC 设置。
+  netdev.mac[0] = 0x52;
+  netdev.mac[1] = 0x54;
+  netdev.mac[2] = 0x00;
+  netdev.mac[3] = 0x12;
+  netdev.mac[4] = 0x34;
+  netdev.mac[5] = 0x57;
+#else
   for (i = 0; i < ETH_ALEN; i++)
     netdev.mac[i] = *(volatile uint8 *)((uint64)VIRTIO1 + 0x100 + i);
+#endif
   netdev.name[0] = 'v';
   netdev.name[1] = 'i';
   netdev.name[2] = 'r';
@@ -224,7 +325,7 @@ virtio_net_init(void)
   netdev.name[5] = 0;
   netdev.transmit = net_transmit;
 
-  for (i = 0; i < NUM; i++) {
+  for (i = 0; i < qmax; i++) {
     rxbuf[i] = (uchar *)kalloc();
     if (rxbuf[i] == 0)
       return;
@@ -232,15 +333,13 @@ virtio_net_init(void)
   }
 
   net_ready = 1;
-  vnotify(0);
+  vn_notify(0);
 
   status |= VIRTIO_CONFIG_S_DRIVER_OK;
-  vset_status(status);
+  vn_set_status(status);
 
   if (netdev_register(&netdev) != 0) {
     printf("net: register failed\n");
     net_ready = 0;
   }
 }
-
-#endif
