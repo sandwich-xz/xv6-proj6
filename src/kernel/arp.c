@@ -95,6 +95,13 @@ arp_input(uchar *p, uint len, uchar *frame)
   if (spa != (uint)NET_IP)
     arp_update(spa, sha);
 
+  if (op == ARP_REPLY && tpa == (uint)NET_IP) {
+    printf("arp: %d.%d.%d.%d is-at ", (spa >> 24) & 0xff, (spa >> 16) & 0xff,
+           (spa >> 8) & 0xff, spa & 0xff);
+    net_print_mac(sha);
+    printf("\n");
+  }
+
   if (op == ARP_REQUEST && tpa == (uint)NET_IP) {
     struct netdev *dev = netdev_first();
     uchar rep[ARP_LEN];

@@ -49,6 +49,19 @@ netdev_input(uchar *pkt, uint len)
   ether_input(pkt, len);
 }
 
+// MAC 打印成 aa:bb:cc:dd:ee:ff（xv6 的 printf 没有 %02x）
+void
+net_print_mac(uchar *mac)
+{
+  int i;
+
+  for (i = 0; i < ETH_ALEN; i++) {
+    printf("%x%x", mac[i] >> 4, mac[i] & 0xf);
+    if (i != ETH_ALEN - 1)
+      printf(":");
+  }
+}
+
 // 启动时调用：驱动注册后这里会打印 MAC 与 IP。
 void
 netinit(void)
@@ -59,7 +72,13 @@ netinit(void)
     printf("net: no netdev\n");
     return;
   }
-  printf("net: %s mac %x:%x:%x:%x:%x:%x ip %x\n", dev->name, dev->mac[0],
-         dev->mac[1], dev->mac[2], dev->mac[3], dev->mac[4], dev->mac[5],
-         (uint)NET_IP);
+
+  printf("net: %s mac ", dev->name);
+  net_print_mac(dev->mac);
+  printf(" ip %d.%d.%d.%d\n", ((uint)NET_IP >> 24) & 0xff,
+         ((uint)NET_IP >> 16) & 0xff, ((uint)NET_IP >> 8) & 0xff,
+         (uint)NET_IP & 0xff);
+
+  // 自检：向网关发一个 ARP 请求，收到回复说明收发链路都通了
+  arp_request((uint)NET_GW);
 }

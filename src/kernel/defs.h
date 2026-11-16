@@ -227,6 +227,10 @@ void            virtio_disk_intr(void);
 int             virtio_disk_pending(void);
 void            virtio_disk_watchdog(void);
 
+// virtio_net.c
+void            virtio_net_init(void);
+void            virtio_net_intr(void);
+
 // netdev.c
 struct netdev;
 void            netinit(void);

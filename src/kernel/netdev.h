@@ -20,6 +20,7 @@ int netdev_register(struct netdev *dev);
 int netdev_present(void);
 struct netdev *netdev_first(void);
 int netdev_send(uchar *pkt, uint len);
+void net_print_mac(uchar *mac);
 
 // 驱动收到一帧后调用（中断或轮询上下文），只把包交给链路层。
 void netdev_input(uchar *pkt, uint len);

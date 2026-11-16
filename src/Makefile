@@ -27,7 +27,8 @@ COMMON_OBJS = \
   $K/netdev.o \
   $K/ether.o \
   $K/arp.o \
-  $K/ip.o
+  $K/ip.o \
+  $K/virtio_net.o
 
 ifeq ($(ARCH),riscv)
 ARCH_OBJS = \
@@ -293,7 +294,9 @@ CPUS := 3
 endif
 
 ifeq ($(ARCH),loongarch)
-QEMUOPTS = -machine virt -kernel $K/kernel -m 1G -smp $(CPUS) -nographic -no-reboot -net none
+QEMUOPTS = -machine virt -kernel $K/kernel -m 1G -smp $(CPUS) -nographic -no-reboot
+QEMUOPTS += -device virtio-net-pci,netdev=n0,disable-legacy=on
+QEMUOPTS += -netdev user,id=n0,hostfwd=udp::7777-:7777,hostfwd=tcp::7778-:7778
 QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0
 QEMUOPTS += -device virtio-blk-pci,drive=x0,disable-legacy=on,vectors=0
 else
@@ -301,6 +304,8 @@ QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 128M -smp $(CPUS) -nogr
 QEMUOPTS += -global virtio-mmio.force-legacy=false
 QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0
 QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+QEMUOPTS += -device virtio-net-device,netdev=n0,bus=virtio-mmio-bus.1
+QEMUOPTS += -netdev user,id=n0,hostfwd=udp::7777-:7777,hostfwd=tcp::7778-:7778
 endif
 
 qemu: check-qemu-version $K/kernel fs.img
