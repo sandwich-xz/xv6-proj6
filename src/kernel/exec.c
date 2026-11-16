@@ -34,6 +34,9 @@ kexec(char *path, char **argv)
   struct proghdr ph;
   pagetable_t pagetable = 0, oldpagetable;
   struct proc *p = myproc();
+  char interp[MAXPATH];
+  int hasinterp = 0;
+  uint64 interp_entry = 0, interp_base = 0, interp_size = 0;
 
   begin_op();
 
@@ -76,6 +79,15 @@ kexec(char *path, char **argv)
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
     if(vfs_readi(ip, 0, (uint64)&ph, off, sizeof(ph)) != sizeof(ph))
       goto bad;
+    if(ph.type == ELF_PROG_INTERP){
+      if(ph.filesz >= sizeof(interp))
+        goto bad;
+      if(vfs_readi(ip, 0, (uint64)interp, ph.off, (uint)ph.filesz) != ph.filesz)
+        goto bad;
+      interp[ph.filesz] = 0;
+      hasinterp = 1;
+      continue;
+    }
     if(ph.type != ELF_PROG_LOAD)
       continue;
     if(ph.memsz < ph.filesz)
@@ -94,6 +106,63 @@ kexec(char *path, char **argv)
   iunlockput(ip);
   end_op();
   ip = 0;
+
+  // 如果可执行文件带 PT_INTERP，把解释器（ld.so）映射到它自己的固定地址。
+  // 解释器单独占一段地址，不并入 sz，否则会把 0x30000000 以下的空洞全部
+  // 按页映射出来。
+  if(hasinterp){
+    struct elfhdr ielf;
+    struct proghdr iph;
+    struct inode *iip;
+    uint64 imin = ~0ULL, imax = 0;
+    int k;
+
+    iip = namei(interp);
+    if(iip == 0)
+      goto bad;
+    ilock(iip);
+    if(vfs_readi(iip, 0, (uint64)&ielf, 0, sizeof(ielf)) != sizeof(ielf) ||
+       ielf.magic != ELF_MAGIC){
+      iunlockput(iip);
+      goto bad;
+    }
+    for(k = 0; k < ielf.phnum; k++){
+      if(vfs_readi(iip, 0, (uint64)&iph, ielf.phoff + k*sizeof(iph), sizeof(iph)) != sizeof(iph)){
+        iunlockput(iip);
+        goto bad;
+      }
+      if(iph.type != ELF_PROG_LOAD)
+        continue;
+      if(iph.vaddr < imin)
+        imin = iph.vaddr;
+      if(iph.vaddr + iph.memsz > imax)
+        imax = iph.vaddr + iph.memsz;
+    }
+    if(imax == 0){
+      iunlockput(iip);
+      goto bad;
+    }
+    interp_base = imin & ~(PGSIZE - 1);
+    interp_size = PGROUNDUP(imax) - interp_base;
+    if(uvmalloc(pagetable, interp_base, interp_base + interp_size, PTE_W | PTE_X) == 0){
+      iunlockput(iip);
+      goto bad;
+    }
+    for(k = 0; k < ielf.phnum; k++){
+      if(vfs_readi(iip, 0, (uint64)&iph, ielf.phoff + k*sizeof(iph), sizeof(iph)) != sizeof(iph)){
+        iunlockput(iip);
+        goto bad;
+      }
+      if(iph.type != ELF_PROG_LOAD)
+        continue;
+      if(loadseg(pagetable, iph.vaddr, iip, iph.off, iph.filesz) < 0){
+        iunlockput(iip);
+        goto bad;
+      }
+    }
+    interp_entry = ielf.entry;
+    iunlockput(iip);
+  }
 
   p = myproc();
   uint64 oldsz = p->sz;
@@ -125,6 +194,28 @@ kexec(char *path, char **argv)
   }
   ustack[argc] = 0;
 
+  // 有解释器时，auxv 要放在 argv 之上（高地址），这样 ld.so 从
+  // argv[argc]==NULL 之后就能顺序读到 AT_ENTRY 等。
+  if(hasinterp){
+    uint64 auxv[8];
+
+    auxv[0] = 9;            // AT_ENTRY
+    auxv[1] = elf.entry;
+    auxv[2] = 7;            // AT_BASE
+    auxv[3] = interp_base;
+    auxv[4] = 6;            // AT_PAGESZ
+    auxv[5] = PGSIZE;
+    auxv[6] = 0;            // AT_NULL
+    auxv[7] = 0;
+
+    sp -= sizeof(auxv);
+    sp -= sp % 16;
+    if(sp < stackbase)
+      goto bad;
+    if(copyout(pagetable, sp, (char *)auxv, sizeof(auxv)) < 0)
+      goto bad;
+  }
+
   // push a copy of ustack[], the array of argv[] pointers.
   sp -= (argc+1) * sizeof(uint64);
   sp -= sp % 16;
@@ -146,21 +237,30 @@ kexec(char *path, char **argv)
     
   // Commit to the user image.
   oldpagetable = p->pagetable;
+  uint64 old_interp_base = p->interp_base, old_interp_size = p->interp_size;
   p->pagetable = pagetable;
   p->sz = sz;
+  p->interp_base = interp_base;
+  p->interp_size = interp_size;
+  uint64 entry = hasinterp ? interp_entry : elf.entry;
 #ifdef ARCH_LOONGARCH
-  p->trapframe->era = elf.entry;  // initial program counter = main
+  p->trapframe->era = entry;  // initial program counter
 #else
-  p->trapframe->epc = elf.entry;  // initial program counter = main
+  p->trapframe->epc = entry;  // initial program counter
 #endif
   p->trapframe->sp = sp; // initial stack pointer
+  if(old_interp_size)
+    uvmunmap(oldpagetable, old_interp_base, old_interp_size/PGSIZE, 1);
   proc_freepagetable(oldpagetable, oldsz);
 
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:
-  if(pagetable)
+  if(pagetable){
+    if(interp_size)
+      uvmunmap(pagetable, interp_base, interp_size/PGSIZE, 1);
     proc_freepagetable(pagetable, sz);
+  }
   if(ip){
     iunlockput(ip);
     end_op();

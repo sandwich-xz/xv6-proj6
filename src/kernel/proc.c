@@ -160,10 +160,18 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
-  if(p->pagetable)
+  if(p->pagetable){
+    // 解释器映射在 sz 之外，要先单独解映射，否则 freewalk 会撞到叶子页
+    if(p->interp_size)
+      uvmunmap(p->pagetable, p->interp_base, p->interp_size/PGSIZE, 1);
     proc_freepagetable(p->pagetable, p->sz);
+  }
   p->pagetable = 0;
+  p->interp_base = 0;
+  p->interp_size = 0;
   p->sz = 0;
+  p->interp_base = 0;
+  p->interp_size = 0;
   p->pid = 0;
   p->parent = 0;
   p->name[0] = 0;

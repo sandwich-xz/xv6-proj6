@@ -185,6 +185,14 @@ _%: %.o $(ULIB) $(USER_LD)
 	$(OBJDUMP) -S $@ > $*.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
 
+# 动态链接器：链接在 0x30000000，ET_EXEC，免去自举重定位
+$U/ld.so: $U/ldstub.o $(ULIB) $U/ld.ld
+	$(LD) $(LDFLAGS) -T $U/ld.ld -o $@ $U/ldstub.o $(ULIB)
+
+# 带 PT_INTERP 的可执行文件（用默认链接脚本，程序头才会被 LOAD 段覆盖）
+$U/_dynhello: $U/dynhello.o $(ULIB) $U/libmath.so $U/dyn.ld
+	$(LD) $(LDFLAGS) -T $U/dyn.ld --dynamic-linker=/ld.so --no-as-needed -o $@ $U/dynhello.o $(ULIB) $U/libmath.so
+
 $U/usys.S : $U/usys.pl
 	perl $U/usys.pl > $U/usys.S
 
@@ -238,6 +246,7 @@ UPROGS=\
 	$U/_udptest\
 	$U/_tcptest\
 	$U/_dltest\
+	$U/_dynhello\
 	$U/_logstress\
 	$U/_forphan\
 	$U/_dorphan\
@@ -274,8 +283,8 @@ tests/hello: $U/_hello
 $U/libmath.so: $U/libmath.c
 	$(CC) $(ARCH_CFLAGS) -O -Wall -fPIC -shared -nostdlib -ffreestanding -o $@ $U/libmath.c
 
-fs.img: mkfs/mkfs README hello.c tests/cmds.sh tests/hello.c tests/test1 tests/test2 tests/hello $U/libmath.so $(UPROGS) $(EXT2IMG) $(FAT32IMG)
-	mkfs/mkfs fs.img README hello.c tests/cmds.sh tests/hello.c tests/test1 tests/test2 tests/hello $U/libmath.so $(UPROGS)
+fs.img: mkfs/mkfs README hello.c tests/cmds.sh tests/hello.c tests/test1 tests/test2 tests/hello $U/libmath.so $U/ld.so $(UPROGS) $(EXT2IMG) $(FAT32IMG)
+	mkfs/mkfs fs.img README hello.c tests/cmds.sh tests/hello.c tests/test1 tests/test2 tests/hello $U/libmath.so $U/ld.so $(UPROGS)
 	cat $(EXT2IMG) >> fs.img
 	cat $(FAT32IMG) >> fs.img
 
