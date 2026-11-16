@@ -301,3 +301,13 @@ virtio_net_pci_isr(void)
   uint8 v = *isr_cfg;
   return v;
 }
+
+// 调试用：0/1 返回对应队列的 queue_enable 与 queue_size（打包），2 返回 num_queues
+uint16
+virtio_net_pci_dbg(uint16 which)
+{
+  if (which == 2)
+    return common_cfg->num_queues;
+  common_cfg->queue_select = which;
+  return (uint16)((common_cfg->queue_enable << 8) | (common_cfg->queue_size & 0xff));
+}
