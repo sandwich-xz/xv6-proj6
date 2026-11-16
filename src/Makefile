@@ -281,7 +281,7 @@ tests/hello: $U/_hello
 	ln -sf ../user/_hello $@
 
 $U/libmath.so: $U/libmath.c
-	$(CC) $(ARCH_CFLAGS) -O -Wall -fPIC -shared -nostdlib -ffreestanding -o $@ $U/libmath.c
+	$(CC) $(ARCH_CFLAGS) -O -Wall -fPIC -shared -nostdlib -ffreestanding -Wl,-soname,libmath.so -o $@ $U/libmath.c
 
 fs.img: mkfs/mkfs README hello.c tests/cmds.sh tests/hello.c tests/test1 tests/test2 tests/hello $U/libmath.so $U/ld.so $(UPROGS) $(EXT2IMG) $(FAT32IMG)
 	mkfs/mkfs fs.img README hello.c tests/cmds.sh tests/hello.c tests/test1 tests/test2 tests/hello $U/libmath.so $U/ld.so $(UPROGS)
