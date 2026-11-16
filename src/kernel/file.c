@@ -12,6 +12,7 @@
 #include "file.h"
 #include "stat.h"
 #include "proc.h"
+#include "socket.h"
 
 struct devsw devsw[NDEV];
 struct {
@@ -35,6 +36,7 @@ filealloc(void)
   for(f = ftable.file; f < ftable.file + NFILE; f++){
     if(f->ref == 0){
       f->ref = 1;
+      f->sock = 0;
       release(&ftable.lock);
       return f;
     }
@@ -75,6 +77,8 @@ fileclose(struct file *f)
 
   if(ff.type == FD_PIPE){
     pipeclose(ff.pipe, ff.writable);
+  } else if(ff.type == FD_SOCK){
+    sock_free(ff.sock);
   } else if(ff.type == FD_INODE || ff.type == FD_DEVICE){
     begin_op();
     iput(ff.ip);

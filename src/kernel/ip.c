@@ -72,7 +72,7 @@ ip_send(uint dst, uchar proto, uchar *payload, uint len)
 
   if (tot > ETH_MTU)
     return -1;
-  if (arp_lookup(dst, mac) != 0) {
+  if (dst != (uint)NET_IP && arp_lookup(dst, mac) != 0) {
     arp_request(dst);
     return -1;
   }
@@ -87,6 +87,12 @@ ip_send(uint dst, uchar proto, uchar *payload, uint len)
   net_put32(pkt + 16, dst);
   net_put16(pkt + 10, ip_cksum(pkt, 20));
   memmove(pkt + 20, payload, len);
+
+  // 目的地址是自己：直接回到协议栈，用来做不依赖外部主机的自测
+  if (dst == (uint)NET_IP) {
+    ip_input(pkt, tot);
+    return 0;
+  }
 
   return ether_send(mac, ETH_IP, pkt, tot);
 }

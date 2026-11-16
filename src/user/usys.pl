@@ -50,3 +50,7 @@ entry("umount");
 entry("sbrk");
 entry("pause");
 entry("uptime");
+entry("socket");
+entry("bind");
+entry("sendto");
+entry("recvfrom");

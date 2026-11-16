@@ -49,3 +49,9 @@ void printf(const char*, ...) __attribute__ ((format (printf, 1, 2)));
 // umalloc.c
 void* malloc(uint);
 void free(void*);
+
+// sysnet.c
+int socket(int, int, int);
+int bind(int, int);
+int sendto(int, int, int, void*, int);
+int recvfrom(int, void*, int, int*, int*);

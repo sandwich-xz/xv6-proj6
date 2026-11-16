@@ -176,6 +176,7 @@ char*           strncpy(char*, const char*, int);
 void            argint(int, int*);
 int             argstr(int, char*, int);
 void            argaddr(int, uint64 *);
+int             fdalloc(struct file *);
 int             fetchstr(uint64, char*, int);
 int             fetchaddr(uint64, uint64*);
 void            syscall();

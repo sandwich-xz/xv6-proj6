@@ -22,3 +22,8 @@
 #define SYS_close  21
 #define SYS_mount  22
 #define SYS_umount 23
+
+#define SYS_socket   24
+#define SYS_bind     25
+#define SYS_sendto   26
+#define SYS_recvfrom 27

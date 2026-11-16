@@ -64,5 +64,6 @@ void icmp_input(uchar *payload, uint len, uchar *iphdr);
 int icmp_ping(uint dst, ushort seq);
 
 void udp_input(uchar *payload, uint len, uchar *iphdr);
+int udp_send(ushort sport, uint dst, ushort dport, uchar *data, uint len);
 
 #endif
