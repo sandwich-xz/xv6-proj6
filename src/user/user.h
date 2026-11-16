@@ -55,3 +55,6 @@ int socket(int, int, int);
 int bind(int, int);
 int sendto(int, int, int, void*, int);
 int recvfrom(int, void*, int, int*, int*);
+int connect(int, int, int);
+int listen(int);
+int accept(int);

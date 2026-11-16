@@ -54,3 +54,6 @@ entry("socket");
 entry("bind");
 entry("sendto");
 entry("recvfrom");
+entry("connect");
+entry("listen");
+entry("accept");

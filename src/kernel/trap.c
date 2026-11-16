@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "net.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -169,6 +170,8 @@ clockintr()
     ticks++;
     wakeup(&ticks);
     release(&tickslock);
+    net_loopback_poll();
+    tcp_timer();
   }
 
   // ask for the next timer interrupt. this also clears

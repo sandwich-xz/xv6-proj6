@@ -29,7 +29,7 @@ sys_socket(void)
   (void)type;
   (void)proto;
 
-  s = sock_alloc();
+  s = sock_alloc(type == 1 ? 1 : 0);
   if (s == 0)
     return -1;
   f = filealloc();
@@ -90,8 +90,7 @@ sys_sendto(void)
 }
 
 uint64
-sys_recvfrom(void)
-{
+sys_recvfrom(void){
   int fd, len;
   uint64 buf, ipaddr, portaddr;
   struct file *f;
@@ -123,4 +122,66 @@ sys_recvfrom(void)
   if (portaddr && copyout(myproc()->pagetable, portaddr, (char *)&sport, sizeof(sport)) < 0)
     return -1;
   return n;
+}
+
+uint64
+sys_connect(void)
+{
+  int fd, ip, port;
+  struct file *f;
+
+  argint(0, &fd);
+  argint(1, &ip);
+  argint(2, &port);
+  if (fd < 0 || fd >= NOFILE || (f = myproc()->ofile[fd]) == 0)
+    return -1;
+  if (f->type != FD_SOCK)
+    return -1;
+  return sock_connect(f->sock, (uint)ip, (ushort)port);
+}
+
+uint64
+sys_listen(void)
+{
+  int fd;
+  struct file *f;
+
+  argint(0, &fd);
+  if (fd < 0 || fd >= NOFILE || (f = myproc()->ofile[fd]) == 0)
+    return -1;
+  if (f->type != FD_SOCK)
+    return -1;
+  return sock_listen(f->sock);
+}
+
+uint64
+sys_accept(void)
+{
+  int fd, nfd;
+  struct file *f, *nf;
+  struct sock *ns;
+
+  argint(0, &fd);
+  if (fd < 0 || fd >= NOFILE || (f = myproc()->ofile[fd]) == 0)
+    return -1;
+  if (f->type != FD_SOCK)
+    return -1;
+
+  ns = sock_accept(f->sock);
+  if (ns == 0)
+    return -1;
+  nf = filealloc();
+  if (nf == 0) {
+    sock_free(ns);
+    return -1;
+  }
+  nf->type = FD_SOCK;
+  nf->sock = ns;
+  nf->readable = 1;
+  nf->writable = 1;
+  if ((nfd = fdalloc(nf)) < 0) {
+    fileclose(nf);
+    return -1;
+  }
+  return nfd;
 }

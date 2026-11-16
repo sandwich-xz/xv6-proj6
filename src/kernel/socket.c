@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 //
-// UDP socket 层：把 fd 语义接到内核的 UDP 上。
-// 队列里存的是已经付过 kalloc 的数据报，读取时拷出并释放。
+// socket 层：UDP 走队列，TCP 转给 tcb。两者共用 struct file 的 FD_SOCK。
 #include "types.h"
 #include "riscv.h"
 #include "defs.h"
@@ -13,6 +12,7 @@
 #include "proc.h"
 #include "net.h"
 #include "socket.h"
+#include "tcp.h"
 
 #define NSOCK 16
 #define SOCKQ 8
@@ -27,36 +27,44 @@ struct mbuf {
 
 struct sock {
   int used;
+  int proto; // 0 = UDP, 1 = TCP
   ushort lport;
-  uint rip;
-  ushort rport;
   struct spinlock lock;
   struct mbuf *head;
   struct mbuf *tail;
   int count;
+  struct tcb *tcb;
 };
 
 static struct sock socks[NSOCK];
 
-int
-sockinit_slot(struct sock *s)
+static void
+sock_reset(struct sock *s)
 {
   initlock(&s->lock, "sock");
   s->used = 1;
   s->head = s->tail = 0;
   s->count = 0;
   s->lport = 0;
-  return 0;
+  s->tcb = 0;
 }
 
 struct sock *
-sock_alloc(void)
+sock_alloc(int proto)
 {
   int i;
 
   for (i = 0; i < NSOCK; i++) {
     if (!socks[i].used) {
-      sockinit_slot(&socks[i]);
+      sock_reset(&socks[i]);
+      socks[i].proto = proto;
+      if (proto == 1) {
+        socks[i].tcb = tcp_alloc();
+        if (socks[i].tcb == 0) {
+          socks[i].used = 0;
+          return 0;
+        }
+      }
       return &socks[i];
     }
   }
@@ -77,12 +85,17 @@ sock_free(struct sock *s)
   }
   s->tail = 0;
   s->count = 0;
+  if (s->tcb) {
+    tcp_close(s->tcb);
+    s->tcb = 0;
+  }
   s->used = 0;
   release(&s->lock);
 }
 
 int
-sock_bind(struct sock *s, ushort port){
+sock_bind(struct sock *s, ushort port)
+{
   int i;
 
   if (s == 0)
@@ -90,9 +103,9 @@ sock_bind(struct sock *s, ushort port){
   for (i = 0; i < NSOCK; i++)
     if (socks[i].used && &socks[i] != s && socks[i].lport == port)
       return -1;
-  acquire(&s->lock);
   s->lport = port;
-  release(&s->lock);
+  if (s->tcb)
+    return tcp_bind(s->tcb, port);
   return 0;
 }
 
@@ -102,7 +115,6 @@ sock_port(struct sock *s)
   return s ? s->lport : 0;
 }
 
-// 收包：按目的端口找到 socket，挂到队列并唤醒读者。
 int
 sock_deliver(ushort dport, uint srcip, ushort sport, uchar *data, uint len)
 {
@@ -112,7 +124,7 @@ sock_deliver(ushort dport, uint srcip, ushort sport, uchar *data, uint len)
   for (i = 0; i < NSOCK; i++) {
     struct sock *s = &socks[i];
 
-    if (!s->used || s->lport != dport)
+    if (!s->used || s->proto != 0 || s->lport != dport)
       continue;
 
     acquire(&s->lock);
@@ -146,7 +158,6 @@ sock_deliver(ushort dport, uint srcip, ushort sport, uchar *data, uint len)
   return -1;
 }
 
-// 阻塞读一个数据报。返回长度，失败返回 -1。
 int
 sock_recv(struct sock *s, uchar *dst, uint maxlen, uint *srcip, ushort *sport)
 {
@@ -174,4 +185,77 @@ sock_recv(struct sock *s, uchar *dst, uint maxlen, uint *srcip, ushort *sport)
     *sport = m->sport;
   kfree((void *)m);
   return n;
+}
+
+int
+sock_connect(struct sock *s, uint ip, ushort port)
+{
+  if (s == 0 || s->tcb == 0)
+    return -1;
+  return tcp_connect(s->tcb, ip, port);
+}
+
+int
+sock_listen(struct sock *s)
+{
+  if (s == 0 || s->tcb == 0)
+    return -1;
+  return tcp_listen(s->tcb);
+}
+
+struct sock *
+sock_accept(struct sock *s)
+{
+  struct tcb *c;
+  int i;
+
+  if (s == 0 || s->tcb == 0)
+    return 0;
+  c = tcp_accept(s->tcb);
+  if (c == 0)
+    return 0;
+
+  for (i = 0; i < NSOCK; i++) {
+    if (!socks[i].used) {
+      sock_reset(&socks[i]);
+      socks[i].proto = 1;
+      socks[i].tcb = c;
+      socks[i].lport = s->lport;
+      return &socks[i];
+    }
+  }
+  tcp_free(c);
+  return 0;
+}
+
+// read/write 走 FD_SOCK 时用：TCP 是流，UDP 是数据报。
+int
+sock_read(struct sock *s, uint64 addr, int n)
+{
+  static uchar kbuf[ETH_MTU];
+  int r;
+
+  if (s == 0 || n <= 0 || n > ETH_MTU)
+    return -1;
+  if (s->proto == 1)
+    r = tcp_recv(s->tcb, kbuf, n);
+  else
+    r = sock_recv(s, kbuf, n, 0, 0);
+  if (r < 0)
+    return -1;
+  if (copyout(myproc()->pagetable, addr, (char *)kbuf, r) < 0)
+    return -1;
+  return r;
+}
+
+int
+sock_write(struct sock *s, uint64 addr, int n)
+{
+  static uchar kbuf[ETH_MTU];
+
+  if (s == 0 || s->proto != 1 || n <= 0 || n > ETH_MTU)
+    return -1;
+  if (copyin(myproc()->pagetable, (char *)kbuf, addr, n) < 0)
+    return -1;
+  return tcp_send(s->tcb, kbuf, n);
 }

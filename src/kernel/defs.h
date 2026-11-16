@@ -232,6 +232,9 @@ void            virtio_disk_watchdog(void);
 void            virtio_net_init(void);
 void            virtio_net_intr(void);
 
+// tcp.c
+void            tcp_timer(void);
+
 // netdev.c
 struct netdev;
 void            netinit(void);

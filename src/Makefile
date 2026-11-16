@@ -30,6 +30,7 @@ COMMON_OBJS = \
   $K/ip.o \
   $K/icmp.o \
   $K/udp.o \
+  $K/tcp.o \
   $K/socket.o \
   $K/sysnet.o \
   $K/virtio_net.o
@@ -235,6 +236,7 @@ UPROGS=\
 	$U/_wc\
 	$U/_zombie\
 	$U/_udptest\
+	$U/_tcptest\
 	$U/_logstress\
 	$U/_forphan\
 	$U/_dorphan\

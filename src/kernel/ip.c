@@ -3,11 +3,71 @@
 // IPv4：头部校验、分发、发送。
 #include "types.h"
 #include "riscv.h"
+#include "spinlock.h"
 #include "defs.h"
 #include "netdev.h"
 #include "net.h"
+#include "tcp.h"
 
 static ushort ip_id;
+
+// 环回队列：目的地址是本机的包不直接递归调用 ip_input，
+// 否则会在持有 tcb 锁时重入 tcp_input，导致 acquire 死锁。
+// 统一入队，由时钟中断里 net_loopback_poll() 投递。
+#define LBQ 16
+static struct {
+  uchar buf[1600];
+  uint len;
+} lbq[LBQ];
+static int lbhead, lbtail;
+static struct spinlock lblk;
+static int lbinit;
+
+void
+net_loopback_init(void)
+{
+  if (!lbinit) {
+    initlock(&lblk, "loopback");
+    lbinit = 1;
+  }
+}
+
+static void
+net_loopback_enqueue(uchar *p, uint len)
+{
+  net_loopback_init();
+  acquire(&lblk);
+  if ((lbhead + 1) % LBQ == lbtail) {
+    release(&lblk);
+    return;
+  }
+  memmove(lbq[lbhead].buf, p, len);
+  lbq[lbhead].len = len;
+  lbhead = (lbhead + 1) % LBQ;
+  release(&lblk);
+}
+
+void
+net_loopback_poll(void)
+{
+  uchar buf[1600];
+  uint len;
+
+  if (!lbinit)
+    return;
+  for (;;) {
+    acquire(&lblk);
+    if (lbtail == lbhead) {
+      release(&lblk);
+      return;
+    }
+    len = lbq[lbtail].len;
+    memmove(buf, lbq[lbtail].buf, len);
+    lbtail = (lbtail + 1) % LBQ;
+    release(&lblk);
+    ip_input(buf, len);
+  }
+}
 
 static ushort
 ip_cksum(uchar *p, uint len)
@@ -54,6 +114,9 @@ ip_input(uchar *p, uint len)
   case 1:
     icmp_input(p + ihl, tot - ihl, p);
     break;
+  case 6:
+    tcp_input(p + ihl, tot - ihl, p);
+    break;
   case 17:
     udp_input(p + ihl, tot - ihl, p);
     break;
@@ -88,9 +151,9 @@ ip_send(uint dst, uchar proto, uchar *payload, uint len)
   net_put16(pkt + 10, ip_cksum(pkt, 20));
   memmove(pkt + 20, payload, len);
 
-  // 目的地址是自己：直接回到协议栈，用来做不依赖外部主机的自测
+  // 目的地址是自己：入队，由时钟中断统一投递（不能同步递归）
   if (dst == (uint)NET_IP) {
-    ip_input(pkt, tot);
+    net_loopback_enqueue(pkt, tot);
     return 0;
   }
 
