@@ -237,6 +237,7 @@ UPROGS=\
 	$U/_zombie\
 	$U/_udptest\
 	$U/_tcptest\
+	$U/_dltest\
 	$U/_logstress\
 	$U/_forphan\
 	$U/_dorphan\
@@ -270,8 +271,11 @@ tests/test2: $U/_test2
 tests/hello: $U/_hello
 	ln -sf ../user/_hello $@
 
-fs.img: mkfs/mkfs README hello.c tests/cmds.sh tests/hello.c tests/test1 tests/test2 tests/hello $(UPROGS) $(EXT2IMG) $(FAT32IMG)
-	mkfs/mkfs fs.img README hello.c tests/cmds.sh tests/hello.c tests/test1 tests/test2 tests/hello $(UPROGS)
+$U/libmath.so: $U/libmath.c
+	$(CC) $(ARCH_CFLAGS) -O -Wall -fPIC -shared -nostdlib -ffreestanding -o $@ $U/libmath.c
+
+fs.img: mkfs/mkfs README hello.c tests/cmds.sh tests/hello.c tests/test1 tests/test2 tests/hello $U/libmath.so $(UPROGS) $(EXT2IMG) $(FAT32IMG)
+	mkfs/mkfs fs.img README hello.c tests/cmds.sh tests/hello.c tests/test1 tests/test2 tests/hello $U/libmath.so $(UPROGS)
 	cat $(EXT2IMG) >> fs.img
 	cat $(FAT32IMG) >> fs.img
 
@@ -286,6 +290,7 @@ clean:
 	$(EXT2IMG) \
 	$(FAT32IMG) \
 	mkfs/mkfs mkfs/mkfat32 .gdbinit \
+	$U/libmath.so \
 	tests/test1 tests/test2 tests/hello \
         $U/usys.S \
 	$(UPROGS)

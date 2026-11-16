@@ -58,3 +58,4 @@ int recvfrom(int, void*, int, int*, int*);
 int connect(int, int, int);
 int listen(int);
 int accept(int);
+uint64 mmap(uint64, int);

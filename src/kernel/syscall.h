@@ -30,3 +30,4 @@
 #define SYS_connect  28
 #define SYS_listen   29
 #define SYS_accept   30
+#define SYS_mmap     31

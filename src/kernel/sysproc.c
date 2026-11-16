@@ -37,6 +37,39 @@ sys_wait(void)
 }
 
 uint64
+sys_mmap(void)
+{
+  uint64 addr;
+  int len;
+  struct proc *p = myproc();
+
+  argaddr(0, &addr);
+  argint(1, &len);
+  if (len <= 0)
+    return -1;
+  if (addr != 0)
+    return -1; // 暂不支持指定地址
+  len = (len + PGSIZE - 1) & ~(PGSIZE - 1);
+
+  // 直接按 sbrk 的方式长在进程尾部：退出时 uvmfree 会统一回收，
+  // 不用额外维护一段独立的映射区。
+  uint64 old = p->sz;
+  if (uvmalloc(p->pagetable, old, old + len, PTE_W | PTE_X) == 0)
+    return -1;
+  p->sz = old + len;
+
+  // kalloc 给的是脏页，必须清零。
+  // 注意：这版 xv6 的内核直接映射是恒等的（虚址 == 物理址），不能加 KERNBASE。
+  for (uint64 a = old; a < old + len; a += PGSIZE) {
+    uint64 pa = walkaddr(p->pagetable, a);
+    if (pa == 0)
+      return -1;
+    memset((void *)pa, 0, PGSIZE);
+  }
+  return old;
+}
+
+uint64
 sys_sbrk(void)
 {
   uint64 addr;

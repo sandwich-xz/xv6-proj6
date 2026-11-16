@@ -110,6 +110,7 @@ extern uint64 sys_recvfrom(void);
 extern uint64 sys_connect(void);
 extern uint64 sys_listen(void);
 extern uint64 sys_accept(void);
+extern uint64 sys_mmap(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -144,6 +145,7 @@ static uint64 (*syscalls[])(void) = {
 [SYS_connect] sys_connect,
 [SYS_listen]  sys_listen,
 [SYS_accept]  sys_accept,
+[SYS_mmap]    sys_mmap,
 };
 
 void
