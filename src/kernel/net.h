@@ -58,5 +58,11 @@ void arp_request(uint ip);
 int arp_lookup(uint ip, uchar *mac);
 
 void ip_input(uchar *payload, uint len);
+int ip_send(uint dst, uchar proto, uchar *payload, uint len);
+
+void icmp_input(uchar *payload, uint len, uchar *iphdr);
+int icmp_ping(uint dst, ushort seq);
+
+void udp_input(uchar *payload, uint len, uchar *iphdr);
 
 #endif

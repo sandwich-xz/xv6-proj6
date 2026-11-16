@@ -100,6 +100,15 @@ arp_input(uchar *p, uint len, uchar *frame)
            (spa >> 8) & 0xff, spa & 0xff);
     net_print_mac(sha);
     printf("\n");
+
+    // 自检第二步：拿到网关 MAC 后立刻 ping 一次
+    if (spa == (uint)NET_GW) {
+      static int pinged;
+      if (!pinged) {
+        pinged = 1;
+        icmp_ping(spa, 1);
+      }
+    }
   }
 
   if (op == ARP_REQUEST && tpa == (uint)NET_IP) {

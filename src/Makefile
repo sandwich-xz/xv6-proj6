@@ -28,6 +28,8 @@ COMMON_OBJS = \
   $K/ether.o \
   $K/arp.o \
   $K/ip.o \
+  $K/icmp.o \
+  $K/udp.o \
   $K/virtio_net.o
 
 ifeq ($(ARCH),riscv)
