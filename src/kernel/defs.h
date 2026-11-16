@@ -227,5 +227,14 @@ void            virtio_disk_intr(void);
 int             virtio_disk_pending(void);
 void            virtio_disk_watchdog(void);
 
+// netdev.c
+struct netdev;
+void            netinit(void);
+int             netdev_register(struct netdev *);
+int             netdev_present(void);
+struct netdev  *netdev_first(void);
+int             netdev_send(uchar *, uint);
+void            netdev_input(uchar *, uint);
+
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

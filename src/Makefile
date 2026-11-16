@@ -23,7 +23,11 @@ COMMON_OBJS = \
   $K/file.o \
   $K/pipe.o \
   $K/exec.o \
-  $K/sysfile.o
+  $K/sysfile.o \
+  $K/netdev.o \
+  $K/ether.o \
+  $K/arp.o \
+  $K/ip.o
 
 ifeq ($(ARCH),riscv)
 ARCH_OBJS = \
