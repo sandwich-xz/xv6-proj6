@@ -248,6 +248,7 @@ UPROGS=\
 	$U/_tcptest\
 	$U/_dltest\
 	$U/_dynhello\
+	$U/_readtest\
 	$U/_logstress\
 	$U/_forphan\
 	$U/_dorphan\

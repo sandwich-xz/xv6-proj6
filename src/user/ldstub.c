@@ -128,7 +128,7 @@ map_lib(char *path, int idx)
 {
   struct ehdr *e;
   struct phdr *ph;
-  uchar *buf = libbufs[idx];
+  uchar *buf = mbuf; // DEBUG: reuse the buffer that worked for the main ELF
   uint64 end = 0, base;
   int i, n;
 

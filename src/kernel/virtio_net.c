@@ -247,6 +247,10 @@ virtio_net_poll(void)
 {
   if (!net_ready)
     return;
+#ifdef ARCH_LOONGARCH
+  // 轮询模式下也必须把 ISR 读掉，否则设备会一直拉着中断线
+  (void)virtio_net_pci_isr();
+#endif
   net_rx_scan();
 }
 
