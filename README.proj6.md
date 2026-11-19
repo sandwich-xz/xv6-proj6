@@ -56,8 +56,8 @@ make ARCH=riscv TOOLPREFIX=riscv64-linux-gnu- qemu
 | RISC-V 网络 | 通过（ARP/ICMP/UDP/TCP 自测） |
 | 动态链接 | 通过（PT_INTERP + .so + JUMP_SLOT） |
 | usertests 回归 | 通过（`ALL TESTS PASSED`） |
-| LoongArch 启动 | 通过 |
-| LoongArch 网卡 | **未完成**（设备可识别、队列可 enable，TX 不被消费） |
+| LoongArch 启动 | 通过（fs/磁盘/网络初始化正常） |
+| LoongArch 网卡 | 已打通 ARP/ICMP（virtio-pci 12 字节头）；UDP/TCP 待验证 |
 
 ## 合规
 
