@@ -26,13 +26,18 @@ void virtio_net_pci_set_queue_addr(uint64, uint64, uint64);
 void virtio_net_pci_set_ready(uint16);
 void virtio_net_pci_notify(uint16);
 uint8 virtio_net_pci_isr(void);
+void virtio_net_pci_dump(void);
 #else
 #define R(r) ((volatile uint32 *)(VIRTIO1 + (r)))
 #endif
 
 #define VIRTIO_NET_F_MRG_RXBUF 15
 #define RX_BUFSZ 2048
-#define HDR_LEN 10 // 不协商 MRG_RXBUF 时 virtio_net_hdr 为 10 字节
+#ifdef ARCH_LOONGARCH
+#define HDR_LEN 12
+#else
+#define HDR_LEN 10
+#endif
 
 struct vq {
   struct virtq_desc *desc;
@@ -49,6 +54,13 @@ static struct netdev netdev;
 static int net_ready;
 static int seen_frame;
 static struct spinlock netlock;
+
+// DMA buffers in BSS (not kalloc): keeps device-visible addresses low.
+static struct virtq_desc rxdesc[NUM], txdesc[NUM];
+static struct virtq_avail rxavail, txavail;
+static struct virtq_used rxused, txused;
+static uchar rxbuffers[NUM][RX_BUFSZ];
+static uchar txbuffer[NET_PKT_MAX];
 
 static uint64
 vaddr_dma(void *p)
@@ -178,7 +190,7 @@ net_transmit(struct netdev *dev, uchar *pkt, uint len)
   vn_notify(1);
 
   for (i = 0; i < 1000000; i++) {
-    if (txq.used->idx != txq.last_used) {
+    if (*(volatile uint16 *)&txq.used->idx != txq.last_used) {
       txq.last_used++;
       release(&netlock);
       return 0;
@@ -194,7 +206,7 @@ net_rx_scan(void)
 {
   int reposted = 0;
 
-  while (rxq.used->idx != rxq.last_used) {
+  while (*(volatile uint16 *)&rxq.used->idx != rxq.last_used) {
     struct virtq_used_elem e = rxq.used->ring[rxq.last_used % NUM];
     uint16 id = e.id;
     uint32 len = e.len;
@@ -247,11 +259,10 @@ virtio_net_init(void)
   int i;
 
 #ifdef ARCH_LOONGARCH
-  // TODO(proj6)：设备能识别、两个队列都能 enable（size=8, enable=1）、DRIVER_OK 已置，
-  // 但提交的 TX 描述符始终不被消费（used.idx 恒为 0）。下一步要对照块设备驱动逐字段
-  // 比较 DMA 地址与 notify 偏移。先不启用，保证 LoongArch 启动干净。
-  printf("net: virtio-net-pci 初始化成功，数据通路待修（暂不启用）\n");
-  return;
+  if (virtio_net_pci_init() < 0) {
+    printf("net: no virtio-net-pci\n");
+    return;
+  }
 #else
   if (*R(VIRTIO_MMIO_MAGIC_VALUE) != 0x74726976 ||
       *R(VIRTIO_MMIO_VERSION) != 2 || *R(VIRTIO_MMIO_DEVICE_ID) != 1 ||
@@ -289,27 +300,24 @@ virtio_net_init(void)
   if (qmax > NUM)
     qmax = NUM;
 
-  rxq.desc = (struct virtq_desc *)kalloc();
-  rxq.avail = (struct virtq_avail *)kalloc();
-  rxq.used = (struct virtq_used *)kalloc();
-  txq.desc = (struct virtq_desc *)kalloc();
-  txq.avail = (struct virtq_avail *)kalloc();
-  txq.used = (struct virtq_used *)kalloc();
-  txbuf = (uchar *)kalloc();
-  if (rxq.desc == 0 || rxq.avail == 0 || rxq.used == 0 || txq.desc == 0 ||
-      txq.avail == 0 || txq.used == 0 || txbuf == 0) {
-    printf("net: out of memory\n");
-    return;
-  }
-  memset(rxq.desc, 0, PGSIZE);
-  memset(rxq.avail, 0, PGSIZE);
-  memset(rxq.used, 0, PGSIZE);
-  memset(txq.desc, 0, PGSIZE);
-  memset(txq.avail, 0, PGSIZE);
-  memset(txq.used, 0, PGSIZE);
+  rxq.desc = rxdesc;
+  rxq.avail = &rxavail;
+  rxq.used = &rxused;
+  txq.desc = txdesc;
+  txq.avail = &txavail;
+  txq.used = &txused;
+  txbuf = txbuffer;
+  memset(rxdesc, 0, sizeof(rxdesc));
+  memset(txdesc, 0, sizeof(txdesc));
+  memset(&rxavail, 0, sizeof(rxavail));
+  memset(&rxused, 0, sizeof(rxused));
+  memset(&txavail, 0, sizeof(txavail));
+  memset(&txused, 0, sizeof(txused));
 
   vn_setup_queue(0, &rxq, qmax);
   vn_setup_queue(1, &txq, qmax);
+#ifdef ARCH_LOONGARCH
+#endif
 
 #ifdef ARCH_LOONGARCH
   // virtio-net-pci 的 MAC 在设备配置空间；这里用固定值，QEMU 会按 NIC 设置。
@@ -332,7 +340,7 @@ virtio_net_init(void)
   netdev.transmit = net_transmit;
 
   for (i = 0; i < qmax; i++) {
-    rxbuf[i] = (uchar *)kalloc();
+    rxbuf[i] = rxbuffers[i];
     if (rxbuf[i] == 0)
       return;
     rx_post(i);

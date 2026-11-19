@@ -302,6 +302,21 @@ virtio_net_pci_isr(void)
   return v;
 }
 
+void
+virtio_net_pci_dump(void)
+{
+  for (int q = 0; q < 2; q++) {
+    common_cfg->queue_select = q;
+    printf("net-pci: q%d size=%d en=%d desc=0x%lx avail=0x%lx used=0x%lx noff=%d\n",
+           q, common_cfg->queue_size, common_cfg->queue_enable,
+           (uint64)common_cfg->queue_desc, (uint64)common_cfg->queue_driver,
+           (uint64)common_cfg->queue_device, common_cfg->queue_notify_off);
+  }
+  printf("net-pci: common=0x%lx notify=0x%lx mult=%d isr=0x%lx\n",
+         (uint64)common_cfg, (uint64)notify_cfg, notify_off_multiplier,
+         (uint64)isr_cfg);
+}
+
 // 调试用：0/1 返回对应队列的 queue_enable 与 queue_size（打包），2 返回 num_queues
 uint16
 virtio_net_pci_dbg(uint16 which)
