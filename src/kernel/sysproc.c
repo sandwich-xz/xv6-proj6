@@ -64,7 +64,11 @@ sys_mmap(void)
     uint64 pa = walkaddr(p->pagetable, a);
     if (pa == 0)
       return -1;
+#ifdef ARCH_LOONGARCH
+    memset((void *)(pa | DMWIN_MASK), 0, PGSIZE);
+#else
     memset((void *)pa, 0, PGSIZE);
+#endif
   }
   return old;
 }

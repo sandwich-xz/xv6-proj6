@@ -176,7 +176,11 @@ clockintr()
   ticks++;
   wakeup(&ticks);
   release(&tickslock);
-  virtio_net_poll();
+  if (cpuid() == 0) {
+    virtio_net_poll();
+    net_loopback_poll();
+    tcp_timer();
+  }
 }
 
 int
