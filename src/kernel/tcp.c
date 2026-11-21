@@ -233,6 +233,21 @@ tcp_accept(struct tcb *t)
   return c;
 }
 
+// 等 ACK 期间也要把环回队列投递出去：否则停等发送只能等时钟中断，
+// 环回吞吐会退化到几 KB/s（实测 8KB/1.49s）。放开锁再投递，避免重入死锁。
+static void
+tcp_wait_ack(struct tcb *t)
+{
+  while (t->tx_pending && t->state != T_CLOSED) {
+    release(&t->lock);
+    net_loopback_poll();
+    acquire(&t->lock);
+    if (!t->tx_pending || t->state == T_CLOSED)
+      break;
+    sleep(t, &t->lock);
+  }
+}
+
 int
 tcp_send(struct tcb *t, uchar *buf, uint len)
 {
@@ -244,8 +259,7 @@ tcp_send(struct tcb *t, uchar *buf, uint len)
 
     if (n > TCP_MSS)
       n = TCP_MSS;
-    while (t->tx_pending && t->state != T_CLOSED)
-      sleep(t, &t->lock);
+    tcp_wait_ack(t);
     if (t->state == T_CLOSED) {
       release(&t->lock);
       return -1;
@@ -255,8 +269,7 @@ tcp_send(struct tcb *t, uchar *buf, uint len)
       return -1;
     }
     tcp_tx_track(t, n, F_ACK | F_PSH);
-    while (t->tx_pending && t->state != T_CLOSED)
-      sleep(t, &t->lock);
+    tcp_wait_ack(t);
     off += n;
   }
   release(&t->lock);
