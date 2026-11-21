@@ -444,6 +444,19 @@ virtio_disk_rw(struct buf *b, int write)
 
   virtio_notify(0); // value is queue number
 
+  // 快速路径：DMA 通常几微秒就完成。LoongArch 上块设备完成中断没有真正接上，
+  // 只靠看门狗会让每个块读白等一个 tick（启动/动态链接因此慢十几秒）。
+  // 这里先自旋等 used 环推进，完成就直接走与中断相同的处理。
+  for (int spin = 0; spin < 1000000; spin++) {
+    if (*(volatile uint16 *)&disk.used->idx != disk.used_idx)
+      break;
+  }
+  if (*(volatile uint16 *)&disk.used->idx != disk.used_idx) {
+    release(&disk.vdisk_lock);
+    virtio_disk_intr();
+    acquire(&disk.vdisk_lock);
+  }
+
   // Wait for virtio_disk_intr() to say request has finished.
   while(b->disk == 1) {
     sleep(b, &disk.vdisk_lock);
