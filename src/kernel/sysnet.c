@@ -86,7 +86,9 @@ sys_sendto(void)
   if (copyin(myproc()->pagetable, (char *)kbuf, buf, len) < 0)
     return -1;
 
-  return udp_send(sock_port(f->sock), (uint)ip, (ushort)port, kbuf, len);
+  int r = udp_send(sock_port(f->sock), (uint)ip, (ushort)port, kbuf, len);
+  net_loopback_poll();
+  return r;
 }
 
 uint64
@@ -112,6 +114,7 @@ sys_recvfrom(void){
   if (len <= 0 || len > ETH_MTU)
     return -1;
 
+  net_loopback_poll();
   n = sock_recv(f->sock, kbuf, len, &srcip, &sport);
   if (n < 0)
     return -1;

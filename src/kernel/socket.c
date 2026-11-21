@@ -237,6 +237,7 @@ sock_read(struct sock *s, uint64 addr, int n)
 
   if (s == 0 || n <= 0 || n > ETH_MTU)
     return -1;
+  net_loopback_poll();
   if (s->proto == 1)
     r = tcp_recv(s->tcb, kbuf, n);
   else
@@ -252,10 +253,13 @@ int
 sock_write(struct sock *s, uint64 addr, int n)
 {
   static uchar kbuf[ETH_MTU];
+  int r;
 
   if (s == 0 || s->proto != 1 || n <= 0 || n > ETH_MTU)
     return -1;
   if (copyin(myproc()->pagetable, (char *)kbuf, addr, n) < 0)
     return -1;
-  return tcp_send(s->tcb, kbuf, n);
+  r = tcp_send(s->tcb, kbuf, n);
+  net_loopback_poll();
+  return r;
 }

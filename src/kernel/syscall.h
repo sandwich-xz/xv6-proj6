@@ -31,3 +31,4 @@
 #define SYS_listen   29
 #define SYS_accept   30
 #define SYS_mmap     31
+#define SYS_rdtime   32

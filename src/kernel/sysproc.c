@@ -37,6 +37,16 @@ sys_wait(void)
 }
 
 uint64
+sys_rdtime(void)
+{
+#ifdef ARCH_RISCV
+  return r_time();
+#else
+  return 0;
+#endif
+}
+
+uint64
 sys_mmap(void)
 {
   uint64 addr;

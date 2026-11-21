@@ -58,3 +58,4 @@ entry("connect");
 entry("listen");
 entry("accept");
 entry("mmap");
+entry("rdtime");
