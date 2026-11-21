@@ -59,7 +59,7 @@ bench_tcp(void)
     }
     printf("netbench: child connected\n");
     memset(buf, 't', sizeof(buf));
-    for (int i = 0; i < 16; i++)
+    for (int i = 0; i < 8; i++)
       write(c, buf, sizeof(buf));
     close(c);
     exit(0);
@@ -73,7 +73,7 @@ bench_tcp(void)
   }
   int total = 0, n;
   uint64 t0 = rdtime();
-  while ((n = read(fd, buf, sizeof(buf))) > 0)
+  while (total < 8192 && (n = read(fd, buf, sizeof(buf))) > 0)
     total += n;
   uint64 t1 = rdtime();
   uint64 us = (t1 - t0) / 10;
