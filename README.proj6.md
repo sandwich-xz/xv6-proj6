@@ -64,3 +64,16 @@ make ARCH=riscv TOOLPREFIX=riscv64-linux-gnu- qemu
 - 许可证：沿用基线的 BSD-2-Clause（见 `src/LICENSE`）
 - 参考与第三方来源：xv6-riscv rev5、2026 北航扩展版、virtio 规范
 - AI 辅助：开发过程中使用 AI 工具生成部分代码与文档，均已人工审阅并在测试中验证
+
+## 文档索引
+
+| 文件 | 内容 |
+| --- | --- |
+| `docs/proj6/设计方案.md` | 十章：背景、架构、实现、踩坑、测试数据、分工 |
+| `docs/proj6/最终状态.md` | 功能矩阵、性能数据、已知短板、提交清单 |
+| `docs/proj6/答辩演示.pptx` | 15 页答辩幻灯片 |
+| `docs/proj6/答辩问答准备.md` | 16 个可能被追问的问题及证据 |
+| `docs/proj6/演示视频脚本.md` | 18–20 分钟录制脚本 |
+| `docs/proj6/交接说明.md` | 环境、构建、运行、代码地图 |
+| `docs/proj6/协作规范.md` | 分支、提交、评审、分工 |
+| `docs/proj6/第三方来源与AI使用说明.md` | 合规声明 |
