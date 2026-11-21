@@ -50,15 +50,27 @@ net_loopback_enqueue(uchar *p, uint len)
 void
 net_loopback_poll(void)
 {
-  uchar buf[1600];
+  // 这里不能用 1600 字节的局部缓冲：该函数既会在系统调用里被调用，
+  // 也会在时钟中断里被调用，嵌套时 1.6KB 的栈帧足以把 8KB 内核栈压爆
+  // （表现为 kernelvec 上二次异常）。改成静态缓冲 + 串行锁。
+  static uchar buf[1600];
+  static struct spinlock poll_lock;
+  static int poll_init;
   uint len;
 
   if (!lbinit)
     return;
+  if (!poll_init) {
+    initlock(&poll_lock, "lbpoll");
+    poll_init = 1;
+  }
+
+  acquire(&poll_lock);
   for (;;) {
     acquire(&lblk);
     if (lbtail == lbhead) {
       release(&lblk);
+      release(&poll_lock);
       return;
     }
     len = lbq[lbtail].len;

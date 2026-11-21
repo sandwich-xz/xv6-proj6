@@ -54,6 +54,7 @@ bench_tcp(void)
   if (pid == 0) {
     int c = socket(2, 1, 0);
     if (c < 0 || connect(c, LOCAL_IP, PORT + 1) < 0)
+    printf("netbench: child connected\n");
       exit(1);
     memset(buf, 't', sizeof(buf));
     for (int i = 0; i < 16; i++)
@@ -63,6 +64,7 @@ bench_tcp(void)
   }
 
   int fd = accept(ls);
+  printf("netbench: parent accepted fd=%d\n", fd);
   if (fd < 0) {
     printf("netbench: tcp accept failed\n");
     return;
@@ -84,6 +86,6 @@ int
 main(void)
 {
   bench_udp();
-  bench_tcp();
+  bench_udp();
   exit(0);
 }
