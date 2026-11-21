@@ -53,9 +53,11 @@ bench_tcp(void)
   int pid = fork();
   if (pid == 0) {
     int c = socket(2, 1, 0);
-    if (c < 0 || connect(c, LOCAL_IP, PORT + 1) < 0)
-    printf("netbench: child connected\n");
+    if (c < 0 || connect(c, LOCAL_IP, PORT + 1) < 0) {
+      printf("netbench: connect failed\n");
       exit(1);
+    }
+    printf("netbench: child connected\n");
     memset(buf, 't', sizeof(buf));
     for (int i = 0; i < 16; i++)
       write(c, buf, sizeof(buf));
@@ -86,6 +88,6 @@ int
 main(void)
 {
   bench_udp();
-  bench_udp();
+  bench_tcp();
   exit(0);
 }
