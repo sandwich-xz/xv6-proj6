@@ -353,3 +353,7 @@ check-qemu-version:
 		echo "ERROR: Need qemu version >= $(MIN_QEMU_VERSION)"; \
 		exit 1; \
 	fi
+
+# Linux ABI 测试程序：用宿主交叉 gcc 静态编译，不链接 xv6 libc
+$U/_statichello: $U/statichello.c
+	riscv64-linux-gnu-gcc -static -no-pie -O1 -o $@ $<
