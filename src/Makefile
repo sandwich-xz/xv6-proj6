@@ -251,6 +251,7 @@ UPROGS=\
 	$U/_dynhello\
 	$U/_readtest\
 	$U/_linuxhello\
+	$U/_lxrun\
 	$U/_netbench\
 	$U/_logstress\
 	$U/_forphan\
