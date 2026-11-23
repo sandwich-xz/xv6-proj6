@@ -247,3 +247,5 @@ void            netdev_input(uchar *, uint);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
+
+uint64          sys_linux(uint64);

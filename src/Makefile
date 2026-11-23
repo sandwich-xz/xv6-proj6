@@ -24,6 +24,7 @@ COMMON_OBJS = \
   $K/pipe.o \
   $K/exec.o \
   $K/sysfile.o \
+  $K/syslinux.o \
   $K/netdev.o \
   $K/ether.o \
   $K/arp.o \
@@ -249,6 +250,7 @@ UPROGS=\
 	$U/_dltest\
 	$U/_dynhello\
 	$U/_readtest\
+	$U/_linuxhello\
 	$U/_netbench\
 	$U/_logstress\
 	$U/_forphan\
