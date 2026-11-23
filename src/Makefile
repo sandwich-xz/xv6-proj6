@@ -260,13 +260,14 @@ EXT2IMG = ext2.img
 EXT2_BLOCKS = 4096
 FAT32IMG = fat32.img
 
-$(EXT2IMG): hello.c $K/param.h
+$(EXT2IMG): hello.c user/static-hello-linux $K/param.h
 	@command -v mkfs.ext2 >/dev/null || { echo "missing mkfs.ext2 (install e2fsprogs)"; exit 1; }
 	@command -v debugfs >/dev/null || { echo "missing debugfs (install e2fsprogs)"; exit 1; }
 	rm -f $(EXT2IMG)
 	dd if=/dev/zero of=$(EXT2IMG) bs=1024 count=$(EXT2_BLOCKS)
 	mkfs.ext2 -F -q -b 1024 -I 128 -m 0 $(EXT2IMG)
 	debugfs -w -R "write hello.c hello.c" $(EXT2IMG)
+	debugfs -w -R "write user/static-hello-linux hello" $(EXT2IMG)
 	debugfs -w -R "write hello.c verylongfilename.txt" $(EXT2IMG)
 	dd if=/dev/zero bs=1024 count=1024 of=hostbig.bin 2>/dev/null
 	debugfs -w -R "write hostbig.bin hostbig.bin" $(EXT2IMG)
@@ -355,5 +356,7 @@ check-qemu-version:
 	fi
 
 # Linux ABI 测试程序：用宿主交叉 gcc 静态编译，不链接 xv6 libc
-$U/_statichello: $U/statichello.c
+
+# Linux 静态二进制（556KB，放不进 xv6fs，写进 ext2 分区）
+user/static-hello-linux: user/statichello.c
 	riscv64-linux-gnu-gcc -static -no-pie -O1 -o $@ $<

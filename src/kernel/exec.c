@@ -94,10 +94,10 @@ kexec(char *path, char **argv)
       goto bad;
     if(ph.vaddr + ph.memsz < ph.vaddr)
       goto bad;
-    if(ph.vaddr % PGSIZE != 0)
-      goto bad;
+    // Linux 允许 p_vaddr 非页对齐（只要与 p_offset 同余），
+    // 这里按页向下取整映射，段内容仍写在 ph.vaddr 处。
     uint64 sz1;
-    if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz, flags2perm(ph.flags))) == 0)
+    if((sz1 = uvmalloc(pagetable, sz, PGROUNDUP(ph.vaddr + ph.memsz), flags2perm(ph.flags))) == 0)
       goto bad;
     sz = sz1;
     if(loadseg(pagetable, ph.vaddr, ip, ph.off, ph.filesz) < 0)
@@ -213,6 +213,48 @@ kexec(char *path, char **argv)
     if(sp < stackbase)
       goto bad;
     if(copyout(pagetable, sp, (char *)auxv, sizeof(auxv)) < 0)
+      goto bad;
+  }
+
+  // 非解释器（Linux ABI 程序）需要在 argv[] 之后补 envp 结束符与 auxv，
+  // 否则 glibc 的 _start 会读到垃圾指针。
+  if(!hasinterp){
+    uint64 auxv[20];
+    uint64 rnd_sp;
+    char rnd[16] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
+    int ai = 0;
+
+    sp -= sizeof(rnd);
+    sp -= sp % 16;
+    if(sp < stackbase)
+      goto bad;
+    if(copyout(pagetable, sp, rnd, sizeof(rnd)) < 0)
+      goto bad;
+    rnd_sp = sp;
+
+    auxv[ai++] = 6;  auxv[ai++] = PGSIZE;   // AT_PAGESZ
+    auxv[ai++] = 9;  auxv[ai++] = elf.entry; // AT_ENTRY
+    auxv[ai++] = 11; auxv[ai++] = 0;         // AT_UID
+    auxv[ai++] = 12; auxv[ai++] = 0;         // AT_EUID
+    auxv[ai++] = 13; auxv[ai++] = 0;         // AT_GID
+    auxv[ai++] = 14; auxv[ai++] = 0;         // AT_EGID
+    auxv[ai++] = 16; auxv[ai++] = 0;         // AT_HWCAP
+    auxv[ai++] = 25; auxv[ai++] = rnd_sp;    // AT_RANDOM
+    auxv[ai++] = 0;  auxv[ai++] = 0;         // AT_NULL
+
+    sp -= ai * sizeof(uint64);
+    sp -= sp % 16;
+    if(sp < stackbase)
+      goto bad;
+    if(copyout(pagetable, sp, (char *)auxv, ai * sizeof(uint64)) < 0)
+      goto bad;
+
+    // envp 结束符（在 argv 结束符之后、auxv 之前）
+    uint64 zero = 0;
+    sp -= sizeof(uint64);
+    if(sp < stackbase)
+      goto bad;
+    if(copyout(pagetable, sp, (char *)&zero, sizeof(zero)) < 0)
       goto bad;
   }
 
