@@ -157,8 +157,12 @@ syscall(void)
   struct proc *p = myproc();
 
   num = p->trapframe->a7;
+  if(p->is_linux) {
+    uint64 rr = sys_linux((uint64)num);
+    p->trapframe->a0 = rr;
+    return;
+  }
   if(num >= 56) {
-    // Linux riscv64 的系统调用号从 56 起，xv6 的号在 1..32，两者不重叠。
     p->trapframe->a0 = sys_linux((uint64)num);
     return;
   }

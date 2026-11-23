@@ -9,6 +9,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "sleeplock.h"
+#include "stat.h"
 #include "fs.h"
 #include "file.h"
 
@@ -50,6 +51,7 @@
 #define L_getppid 173
 #define L_clone 220
 #define L_execve 221
+#define L_chdir 49
 
 struct linux_iovec {
   uint64 base;
@@ -254,17 +256,87 @@ sys_linux(uint64 num)
     return -1; // 没有符号链接：让调用方走 fallback
   case L_newfstatat:
   case L_fstat: {
-    // 只填一个"字符设备"的最小 stat，够 glibc 判断 stdout 是否 tty
+    // Linux struct stat（riscv64）：st_mode 在 16，st_size 在 48
     char st[128];
+    struct file *f;
+    struct inode *ip = 0;
+    uint64 size = 0;
+    uint32 mode = 0x8000;
+    uint64 ubuf;
+    int type;
+
     memset(st, 0, sizeof(st));
-    *(uint32 *)(st + 4) = 0x2000; // st_mode = S_IFCHR
-    *(uint64 *)(st + 16) = 1;     // st_nlink
-    if (copyout(p->pagetable, a1, st, sizeof(st)) < 0)
+    if (num == L_fstat) {
+      if ((f = lfd(a0)) == 0)
+        return -1;
+      ubuf = a1;
+      ip = f->ip;
+    } else {
+      char path[MAXPATH];
+      if (copyinstr(p->pagetable, path, a1, MAXPATH) < 0)
+        return -1;
+      ubuf = a2;
+      begin_op();
+      if ((ip = namei(path)) == 0) {
+        end_op();
+        return -1;
+      }
+      ilock(ip);
+      type = ip->type;
+      size = ip->size;
+      iunlockput(ip);
+      end_op();
+      goto fill;
+    }
+
+    if (ip) {
+      ilock(ip);
+      type = ip->type;
+      size = ip->size;
+      iunlock(ip);
+    } else {
+      type = T_DEVICE;
+    }
+
+  fill:
+    if (type == T_DIR)
+      mode = 0x4000;
+    else if (type == T_FILE)
+      mode = 0x8000;
+    else
+      mode = 0x2000;
+    *(uint32 *)(st + 16) = mode | 0777;
+    *(uint32 *)(st + 20) = 1;
+    *(uint64 *)(st + 48) = size;
+    if (copyout(p->pagetable, ubuf, st, sizeof(st)) < 0)
       return -1;
     return 0;
   }
+  case L_chdir: {
+    char path[MAXPATH];
+    struct inode *ip;
+
+    if (copyinstr(p->pagetable, path, a0, MAXPATH) < 0)
+      return -1;
+    begin_op();
+    if ((ip = namei(path)) == 0) {
+      end_op();
+      return -1;
+    }
+    ilock(ip);
+    if (ip->type != T_DIR) {
+      iunlockput(ip);
+      end_op();
+      return -1;
+    }
+    iunlock(ip);
+    iput(p->cwd);
+    end_op();
+    p->cwd = ip;
+    return 0;
+  }
   case L_clone: {
-    // 只支持 fork 语义（不含 CLONE_VM）；线程模型我们暂不支持
+    // 只支持 fork 语义（不含 CLONE_VM）；线程模型暂不支持
     uint64 flags = a0;
     if (flags & 0x100) // CLONE_VM
       return -1;
