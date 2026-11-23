@@ -52,6 +52,9 @@
 #define L_clone 220
 #define L_execve 221
 #define L_chdir 49
+#define L_getcwd 17
+#define L_setpgid 154
+#define L_getpgid 155
 
 struct linux_iovec {
   uint64 base;
@@ -312,6 +315,18 @@ sys_linux(uint64 num)
       return -1;
     return 0;
   }
+  case L_getcwd: {
+    char cwd[2] = "/";
+    if (a1 < 2)
+      return -1;
+    if (copyout(p->pagetable, a0, cwd, 2) < 0)
+      return -1;
+    return a0;
+  }
+  case L_setpgid:
+    return 0;
+  case L_getpgid:
+    return p->pid;
   case L_chdir: {
     char path[MAXPATH];
     struct inode *ip;
