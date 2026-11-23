@@ -40,6 +40,10 @@
 #define L_gettimeofday 169
 #define L_getrandom 278
 #define L_ioctl 29
+#define L_readlinkat 78
+#define L_newfstatat 79
+#define L_fstat 80
+#define L_prlimit64 261
 
 struct linux_iovec {
   uint64 base;
@@ -224,6 +228,21 @@ sys_linux(uint64 num)
       return -1;
     return 0;
   }
+  case L_readlinkat:
+    return -1; // 没有符号链接：让调用方走 fallback
+  case L_newfstatat:
+  case L_fstat: {
+    // 只填一个"字符设备"的最小 stat，够 glibc 判断 stdout 是否 tty
+    char st[128];
+    memset(st, 0, sizeof(st));
+    *(uint32 *)(st + 4) = 0x2000; // st_mode = S_IFCHR
+    *(uint64 *)(st + 16) = 1;     // st_nlink
+    if (copyout(p->pagetable, a1, st, sizeof(st)) < 0)
+      return -1;
+    return 0;
+  }
+  case L_prlimit64:
+    return 0;
   case L_getrandom: {
     char r[8] = {1, 2, 3, 4, 5, 6, 7, 8};
     int n = a2 > 8 ? 8 : (int)a2;

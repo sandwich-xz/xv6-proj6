@@ -274,7 +274,19 @@ kexec(char *path, char **argv)
   // a0 and a1 contain arguments to user main(argc, argv)
   // argc is returned via the system call return
   // value, which goes in a0.
-  p->trapframe->a1 = sp;
+  // Linux ABI：sp 指向 argc 字，argv 紧随其后（glibc 的 _start 用 sp+8 当 argv）。
+  // xv6 的约定是 sp 直接指向 argv，两者不同，这里按目标格式区分。
+  if(!hasinterp){
+    uint64 ac = argc;
+    sp -= sizeof(uint64);
+    if(sp < stackbase)
+      goto bad;
+    if(copyout(pagetable, sp, (char *)&ac, sizeof(ac)) < 0)
+      goto bad;
+    p->trapframe->a1 = sp + sizeof(uint64);
+  } else {
+    p->trapframe->a1 = sp;
+  }
 
   // Save program name for debugging.
   for(last=s=path; *s; s++)
