@@ -44,6 +44,12 @@
 #define L_newfstatat 79
 #define L_fstat 80
 #define L_prlimit64 261
+#define L_dup 23
+#define L_dup3 24
+#define L_fcntl 25
+#define L_getppid 173
+#define L_clone 220
+#define L_execve 221
 
 struct linux_iovec {
   uint64 base;
@@ -107,6 +113,8 @@ l_mmap(uint64 len)
   }
   return old;
 }
+
+static char argbuf[MAXARG][MAXPATH];
 
 uint64
 sys_linux(uint64 num)
@@ -210,6 +218,20 @@ sys_linux(uint64 num)
   }
   case L_getpid:
     return p->pid;
+  case L_getppid:
+    return 1;
+  case L_dup:
+  case L_dup3: {
+    struct file *f = lfd(a0);
+    int fd;
+    if (f == 0)
+      return -1;
+    if ((fd = fdalloc(f)) < 0)
+      return -1;
+    return fd;
+  }
+  case L_fcntl:
+    return 0;
   case L_getuid:
   case L_geteuid:
   case L_getgid:
@@ -240,6 +262,35 @@ sys_linux(uint64 num)
     if (copyout(p->pagetable, a1, st, sizeof(st)) < 0)
       return -1;
     return 0;
+  }
+  case L_clone: {
+    // 只支持 fork 语义（不含 CLONE_VM）；线程模型我们暂不支持
+    uint64 flags = a0;
+    if (flags & 0x100) // CLONE_VM
+      return -1;
+    return kfork();
+  }
+  case L_execve: {
+    char path[MAXPATH];
+    char *argv[MAXARG];
+    int i;
+
+    if (copyinstr(p->pagetable, path, a0, MAXPATH) < 0)
+      return -1;
+    for (i = 0; i < MAXARG - 1; i++) {
+      uint64 uarg;
+      if (copyin(p->pagetable, (char *)&uarg, a1 + i * sizeof(uint64), sizeof(uarg)) < 0)
+        return -1;
+      if (uarg == 0)
+        break;
+      if (copyinstr(p->pagetable, argbuf[i], uarg, MAXPATH) < 0)
+        return -1;
+      argv[i] = argbuf[i];
+    }
+    argv[i] = 0;
+    if (i == 0)
+      return -1;
+    return kexec(path, argv);
   }
   case L_prlimit64:
     return 0;

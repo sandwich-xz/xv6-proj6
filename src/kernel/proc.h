@@ -151,4 +151,5 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  int is_linux;                 // 是否按 Linux ABI 分发系统调用
 };

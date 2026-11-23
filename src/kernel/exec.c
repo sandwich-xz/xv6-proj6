@@ -176,13 +176,15 @@ kexec(char *path, char **argv)
   // Make the first inaccessible as a stack guard.
   // Use the rest as the user stack.
   sz = PGROUNDUP(sz);
+  // Linux 程序（尤其 shell）栈需求远大于 xv6 用户程序
+  int nstack = hasinterp ? USERSTACK : 8;
   uint64 sz1;
-  if((sz1 = uvmalloc(pagetable, sz, sz + (USERSTACK+1)*PGSIZE, PTE_W)) == 0)
+  if((sz1 = uvmalloc(pagetable, sz, sz + (nstack+1)*PGSIZE, PTE_W)) == 0)
     goto bad;
   sz = sz1;
-  uvmclear(pagetable, sz-(USERSTACK+1)*PGSIZE);
+  uvmclear(pagetable, sz-(nstack+1)*PGSIZE);
   sp = sz;
-  stackbase = sp - USERSTACK*PGSIZE;
+  stackbase = sp - nstack*PGSIZE;
 
   // Copy argument strings into new stack, remember their
   // addresses in ustack[].
@@ -287,6 +289,9 @@ kexec(char *path, char **argv)
   } else {
     p->trapframe->a1 = sp;
   }
+
+  // Linux 静态程序入口在 0x10000 以上；xv6 用户程序链接在低地址。
+  p->is_linux = (!hasinterp && elf.entry >= 0x10000);
 
   // Save program name for debugging.
   for(last=s=path; *s; s++)

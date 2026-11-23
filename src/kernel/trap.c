@@ -74,7 +74,7 @@ usertrap(void)
     // page fault on lazily-allocated page
   } else {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+    printf("            sepc=0x%lx stval=0x%lx sp=0x%lx a0=0x%lx gp=0x%lx tp=0x%lx\n", r_sepc(), r_stval(), p->trapframe->sp, p->trapframe->a0, p->trapframe->gp, p->trapframe->tp);
     setkilled(p);
   }
 
@@ -125,6 +125,7 @@ prepare_return(void)
   unsigned long x = r_sstatus();
   x &= ~SSTATUS_SPP; // clear SPP to 0 for user mode
   x |= SSTATUS_SPIE; // enable interrupts in user mode
+  x |= SSTATUS_FS; // 允许用户态使用浮点指令（musl/glibc 的 setjmp 会保存 fp 寄存器）
   w_sstatus(x);
 
   // set S Exception Program Counter to the saved user pc.
