@@ -412,3 +412,13 @@ verify-all:
 	@bash tests/full_usertests.sh riscv
 	@bash tests/full_usertests.sh loongarch
 	@echo "verify-all: ALL GREEN"
+
+# 评测机入口：make all 产出 kernel-rv 与 kernel-la（赛题要求的两个 ELF）
+.PHONY: all
+all:
+	$(MAKE) -C src ARCH=riscv TOOLPREFIX=riscv64-linux-gnu- kernel/kernel
+	cp src/kernel/kernel kernel-rv
+	$(MAKE) -C src clean
+	$(MAKE) -C src ARCH=loongarch TOOLPREFIX=loongarch64-linux-gnu- kernel/kernel
+	cp src/kernel/kernel kernel-la
+	@echo "built: kernel-rv kernel-la"

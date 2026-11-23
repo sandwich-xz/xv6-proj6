@@ -42,3 +42,6 @@ plan/
 !tests/**/logs/README.md
 
 ppt_build
+# 评测入口产物
+kernel-rv
+kernel-la
