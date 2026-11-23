@@ -53,6 +53,7 @@
 #define L_execve 221
 #define L_chdir 49
 #define L_getcwd 17
+#define L_wait4 260
 #define L_setpgid 154
 #define L_getpgid 155
 
@@ -314,6 +315,10 @@ sys_linux(uint64 num)
     if (copyout(p->pagetable, ubuf, st, sizeof(st)) < 0)
       return -1;
     return 0;
+  }
+  case L_wait4: {
+    // 直接把子进程 pid 返回；wstatus 由 kwait 写入用户地址
+    return kwait(a1);
   }
   case L_getcwd: {
     char cwd[2] = "/";
