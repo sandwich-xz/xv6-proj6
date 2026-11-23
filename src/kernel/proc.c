@@ -307,6 +307,7 @@ kfork(void)
   np->cwd = idup(p->cwd);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
+  np->is_linux = p->is_linux;
 
   pid = np->pid;
 
