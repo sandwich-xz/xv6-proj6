@@ -260,7 +260,7 @@ EXT2IMG = ext2.img
 EXT2_BLOCKS = 4096
 FAT32IMG = fat32.img
 
-$(EXT2IMG): hello.c user/static-hello-linux $K/param.h
+$(EXT2IMG): hello.c user/static-hello-linux user/asm-hello-linux $K/param.h
 	@command -v mkfs.ext2 >/dev/null || { echo "missing mkfs.ext2 (install e2fsprogs)"; exit 1; }
 	@command -v debugfs >/dev/null || { echo "missing debugfs (install e2fsprogs)"; exit 1; }
 	rm -f $(EXT2IMG)
@@ -268,6 +268,7 @@ $(EXT2IMG): hello.c user/static-hello-linux $K/param.h
 	mkfs.ext2 -F -q -b 1024 -I 128 -m 0 $(EXT2IMG)
 	debugfs -w -R "write hello.c hello.c" $(EXT2IMG)
 	debugfs -w -R "write user/static-hello-linux hello" $(EXT2IMG)
+	debugfs -w -R "write user/asm-hello-linux asmhello" $(EXT2IMG)
 	debugfs -w -R "write hello.c verylongfilename.txt" $(EXT2IMG)
 	dd if=/dev/zero bs=1024 count=1024 of=hostbig.bin 2>/dev/null
 	debugfs -w -R "write hostbig.bin hostbig.bin" $(EXT2IMG)
@@ -360,3 +361,7 @@ check-qemu-version:
 # Linux 静态二进制（556KB，放不进 xv6fs，写进 ext2 分区）
 user/static-hello-linux: user/statichello.c
 	riscv64-linux-gnu-gcc -static -no-pie -O1 -o $@ $<
+
+# 纯汇编 Linux 二进制（不依赖 libc），用于隔离内核 ABI 与 glibc 启动假设
+user/asm-hello-linux: user/asmhello.S
+	riscv64-linux-gnu-gcc -nostdlib -static -no-pie -Wl,-e,_start -o $@ $<

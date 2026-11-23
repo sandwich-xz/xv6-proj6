@@ -76,6 +76,7 @@ kexec(char *path, char **argv)
     goto bad;
 
   // Load program into memory.
+  uint64 first_load_va = 0, first_load_off = 0;
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
     if(vfs_readi(ip, 0, (uint64)&ph, off, sizeof(ph)) != sizeof(ph))
       goto bad;
@@ -97,6 +98,10 @@ kexec(char *path, char **argv)
     // Linux 允许 p_vaddr 非页对齐（只要与 p_offset 同余），
     // 这里按页向下取整映射，段内容仍写在 ph.vaddr 处。
     uint64 sz1;
+    if(first_load_va == 0){
+      first_load_va = ph.vaddr;
+      first_load_off = ph.off;
+    }
     if((sz1 = uvmalloc(pagetable, sz, PGROUNDUP(ph.vaddr + ph.memsz), flags2perm(ph.flags))) == 0)
       goto bad;
     sz = sz1;
@@ -232,7 +237,9 @@ kexec(char *path, char **argv)
       goto bad;
     rnd_sp = sp;
 
-    auxv[ai++] = 6;  auxv[ai++] = PGSIZE;   // AT_PAGESZ
+    auxv[ai++] = 3;  auxv[ai++] = first_load_va + (elf.phoff - first_load_off); // AT_PHDR
+    auxv[ai++] = 5;  auxv[ai++] = elf.phnum;  // AT_PHNUM
+    auxv[ai++] = 6;  auxv[ai++] = PGSIZE;     // AT_PAGESZ
     auxv[ai++] = 9;  auxv[ai++] = elf.entry; // AT_ENTRY
     auxv[ai++] = 11; auxv[ai++] = 0;         // AT_UID
     auxv[ai++] = 12; auxv[ai++] = 0;         // AT_EUID
@@ -243,7 +250,6 @@ kexec(char *path, char **argv)
     auxv[ai++] = 0;  auxv[ai++] = 0;         // AT_NULL
 
     sp -= ai * sizeof(uint64);
-    sp -= sp % 16;
     if(sp < stackbase)
       goto bad;
     if(copyout(pagetable, sp, (char *)auxv, ai * sizeof(uint64)) < 0)
@@ -260,7 +266,6 @@ kexec(char *path, char **argv)
 
   // push a copy of ustack[], the array of argv[] pointers.
   sp -= (argc+1) * sizeof(uint64);
-  sp -= sp % 16;
   if(sp < stackbase)
     goto bad;
   if(copyout(pagetable, sp, (char *)ustack, (argc+1)*sizeof(uint64)) < 0)
@@ -320,20 +325,26 @@ loadseg(pagetable_t pagetable, uint64 va, struct inode *ip, uint offset, uint sz
   uint i, n;
   uint64 pa;
 
-  for(i = 0; i < sz; i += PGSIZE){
-    pa = walkaddr(pagetable, va + i);
+  // Linux 允许 p_vaddr 非页对齐（与 p_offset 同余），所以要按页内偏移
+  // 逐段拷贝；原来的实现假设 va 页对齐，会把数据写到页首。
+  for(i = 0; i < sz; ){
+    uint64 cur = va + i;
+    uint64 delta = cur % PGSIZE;
+
+    pa = walkaddr(pagetable, cur);
     if(pa == 0)
       panic("loadseg: address should exist");
-    if(sz - i < PGSIZE)
+    n = PGSIZE - delta;
+    if(sz - i < n)
       n = sz - i;
-    else
-      n = PGSIZE;
+    pa += delta;
 #ifdef ARCH_LOONGARCH
     pa |= DMWIN_MASK;
 #endif
-    if(vfs_readi(ip, 0, (uint64)pa, offset+i, n) != n)
+    if(vfs_readi(ip, 0, (uint64)pa, offset + i, n) != n)
       return -1;
+    i += n;
   }
-  
+
   return 0;
 }
